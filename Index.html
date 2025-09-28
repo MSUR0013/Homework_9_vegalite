@@ -1,0 +1,282 @@
+    <!doctype html>
+    <html lang="en">
+    <head>
+    <meta charset="utf-8" />
+    <title>Local Government Areas. Population Change 2023–24 (%)</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <!-- MapLibre -->
+    <link href="https://unpkg.com/maplibre-gl@3.6.1/dist/maplibre-gl.css" rel="stylesheet" />
+    <script src="https://unpkg.com/maplibre-gl@3.6.1/dist/maplibre-gl.js"></script>
+
+    <!-- topojson + d3 for CSV join -->
+    <script src="https://unpkg.com/topojson-client@3"></script>
+    <script src="https://unpkg.com/d3@7/dist/d3.min.js"></script>
+
+    <style>
+        :root{
+        --bg:#d9e3ec;          /* page background */
+        --card:#eef3f7;        /* card background */
+        --ink:#0b2239;         /* headings */
+        --muted:#6b7c8f;
+        --shadow:0 10px 25px rgba(11,34,57,.12);
+        --radius:14px;
+        }
+        * { box-sizing: border-box; }
+        body{
+        margin:0;
+        font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+        background:var(--bg);
+        color:var(--ink);
+        }
+        .page{
+        max-width: 1100px;
+        margin: 22px auto 48px;
+        padding: 0 16px;
+        }
+        h1{
+        font-size: clamp(22px, 3.4vw, 36px);
+        line-height: 1.2;
+        margin: 0 0 16px;
+        letter-spacing:.2px;
+        }
+        .map-card{
+        background: var(--card);
+        border-radius: var(--radius);
+        box-shadow: var(--shadow);
+        padding: 18px 18px 22px;
+        }
+        .map-wrap{
+        position: relative;
+        border-radius: calc(var(--radius) - 6px);
+        overflow: hidden;
+        height: 520px;                 /* adjust height as needed */
+        background: #e9f0f6;
+        border: 1px solid #d9e3ec;
+        }
+        #map{ position:absolute; inset:0; }
+
+        /* Legend card */
+        .legend{
+        position: absolute;
+        left: 18px;
+        top: 16px;
+        background:#fff;
+        border-radius: 12px;
+        box-shadow: 0 8px 18px rgba(11,34,57,.12);
+        padding: 14px 16px;
+        min-width: 260px;
+        border: 1px solid #e6eef5;
+        }
+        .legend h3{
+        margin:0 0 6px;
+        font-size: 18px;
+        }
+        .legend small{
+        color: var(--muted);
+        }
+        .key{
+        display:flex; align-items:center; gap:10px;
+        margin: 8px 0;
+        font-size: 14px;
+        color:#1b2a3a;
+        }
+        .swatch{
+        width:16px; height:16px; border-radius:3px; border:1px solid rgba(0,0,0,.06);
+        }
+
+        /* Popup styling */
+        .mapboxgl-popup-content, .maplibregl-popup-content{
+        font: 14px/1.35 system-ui, sans-serif;
+        color: #0b2239;
+        border-radius: 10px;
+        border: 1px solid #e2ebf3;
+        box-shadow: var(--shadow);
+        }
+        .popup-title{
+        font-weight: 700;
+        margin-bottom: 4px;
+        }
+        .popup-grid{
+        display:grid; grid-template-columns: auto auto; gap:2px 10px;
+        }
+
+        /* Make MapLibre controls a bit rounder to match look */
+        .maplibregl-ctrl, .mapboxgl-ctrl{
+        border-radius: 10px;
+        box-shadow: 0 6px 14px rgba(11,34,57,.12);
+        border: 1px solid #e2ebf3;
+        overflow: hidden;
+        }
+    </style>
+    </head>
+    <body>
+    <div class="page">
+        <div class="map-card">
+        <h1>Local Government Areas. Population Change 2023–24 (%)</h1>
+        <div class="map-wrap">
+            <div id="map"></div>
+
+            <!-- Floating legend -->
+            <div class="legend" id="legend">
+            <h3>Top 10 growth areas</h3>
+            <small>Local Government Areas (LGA 2024)</small>
+            <div class="key"><span class="swatch" style="background:#b30000"></span>3.0 or more</div>
+            <div class="key"><span class="swatch" style="background:#d7301f"></span>2.0 to less than 3.0</div>
+            <div class="key"><span class="swatch" style="background:#fc8d59"></span>1.0 to less than 2.0</div>
+            <div class="key"><span class="swatch" style="background:#fee08b"></span>0.0 to less than 1.0</div>
+            <div class="key"><span class="swatch" style="background:#ffffbf; border-color:#d8d8d8"></span>Decline</div>
+            <div class="key"><span class="swatch" style="background:#e0e0e0; border-color:#d0d0d0"></span>No data</div>
+            </div>
+        </div>
+        </div>
+    </div>
+
+    <script>
+    (async function () {
+    // 1) Load TopoJSON + CSV
+    const gj = await fetch('data/LGA_2024_AUST_GDA2020 (2).json').then(r => r.json());
+    const csv  = await d3.csv('data/lga_change_2324.csv'); // LGA_CODE24, LGA_NAME24, ERP_2023, ERP_2024
+
+    // 2) Build a lookup of metrics keyed by LGA_CODE24
+    const byCode = new Map();
+    for (const row of csv) {
+        const erp23 = +row.ERP_2023, erp24 = +row.ERP_2024;
+        const changePct = (isFinite(erp23) && erp23 > 0 && isFinite(erp24))
+        ? ((erp24 - erp23) / erp23) * 100
+        : null;
+
+        let band = 'No data';
+        if (changePct !== null) {
+        if (changePct < 0) band = 'Decline';
+        else if (changePct < 1) band = '0.0 to <1.0';
+        else if (changePct < 2) band = '1.0 to <2.0';
+        else if (changePct < 3) band = '2.0 to <3.0';
+        else band = '3.0 or more';
+        }
+        byCode.set(row.LGA_CODE24, {
+        name: row.LGA_NAME24,
+        erp23, erp24, changePct, band
+        });
+    }
+
+    // 3) Detect the TopoJSON "feature" name and convert to GeoJSON
+
+    // 4) Join CSV metrics onto features (as properties)
+    gj.features.forEach(f => {
+        const code = f.properties && f.properties.LGA_CODE24;
+        const m = byCode.get(code);
+        if (m) {
+        f.properties.LGA_NAME24 = m.name;
+        f.properties.ERP_2023 = m.erp23;
+        f.properties.ERP_2024 = m.erp24;
+        f.properties.change_pct = m.changePct;
+        f.properties.band = m.band;
+        } else {
+        f.properties.band = 'No data';
+        }
+    });
+
+    // 5) Init MapLibre
+    const map = new maplibregl.Map({
+        container: 'map',
+        style: 'https://demotiles.maplibre.org/style.json',
+        center: [134, -26],
+        zoom: 3.3,
+        attributionControl: false
+    });
+    map.addControl(new maplibregl.NavigationControl({ showCompass: true }), 'top-right');
+    map.addControl(new maplibregl.AttributionControl({ compact: true }));
+
+    // Fit to Australia bounds once source is added
+    function fitToFeatures() {
+        const b = turf.bbox(gj); // uses turf bbox helper
+        map.fitBounds([[b[0], b[1]], [b[2], b[3]]], { padding: 30, duration: 500 });
+    }
+
+    // Add turf bbox helper quickly (tiny wrapper)
+    const turf = { bbox: (fc) => {
+        let minX=Infinity, minY=Infinity, maxX=-Infinity, maxY=-Infinity;
+        for (const f of fc.features) {
+        const bb = (coords) => coords.forEach(pt => {
+            if (Array.isArray(pt[0])) return bb(pt);
+            const [x,y]=pt; if (x<minX) minX=x; if (y<minY) minY=y;
+            if (x>maxX) maxX=x; if (y>maxY) maxY=y;
+        });
+        bb(f.geometry.coordinates);
+        }
+        return [minX, minY, maxX, maxY];
+    }};
+
+    map.on('load', () => {
+        // 6) Add LGAs as a GeoJSON source
+        map.addSource('lga', { type: 'geojson', data: gj });
+
+        // Color expression by "band" (matches legend)
+        const fillColor = [
+        'match', ['get', 'band'],
+        '3.0 or more', '#b30000',
+        '2.0 to <3.0', '#d7301f',
+        '1.0 to <2.0', '#fc8d59',
+        '0.0 to <1.0', '#fee08b',
+        'Decline',     '#ffffbf',
+        'No data',     '#e0e0e0',
+        '#e0e0e0'
+        ];
+
+        // Fill layer
+        map.addLayer({
+        id: 'lga-fill',
+        type: 'fill',
+        source: 'lga',
+        paint: {
+            'fill-color': fillColor,
+            'fill-opacity': 0.95
+        }
+        });
+
+        // Outline layer
+        map.addLayer({
+        id: 'lga-outline',
+        type: 'line',
+        source: 'lga',
+        paint: {
+            'line-color': '#ffffff',
+            'line-width': 0.6
+        }
+        });
+
+        fitToFeatures();
+
+        // 7) Hover popup
+        const popup = new maplibregl.Popup({ closeButton: false, closeOnClick: false });
+        let hoveredId = null;
+
+        map.on('mousemove', 'lga-fill', (e) => {
+        const f = e.features && e.features[0];
+        if (!f) return;
+
+        const p = f.properties || {};
+        const name = p.LGA_NAME24 || '(unknown)';
+        const e23 = isFinite(+p.ERP_2023) ? (+p.ERP_2023).toLocaleString() : '–';
+        const e24 = isFinite(+p.ERP_2024) ? (+p.ERP_2024).toLocaleString() : '–';
+        const ch  = isFinite(+p.change_pct) ? (+p.change_pct).toFixed(2) + '%' : '–';
+
+        const html = `
+            <div class="popup-title">${name}</div>
+            <div class="popup-grid">
+            <div>ERP 2023</div><div><b>${e23}</b></div>
+            <div>ERP 2024</div><div><b>${e24}</b></div>
+            <div>Change</div><div><b>${ch}</b></div>
+            </div>
+        `;
+
+        popup.setLngLat(e.lngLat).setHTML(html).addTo(map);
+        });
+
+        map.on('mouseleave', 'lga-fill', () => popup.remove());
+    });
+    })();
+    </script>
+    </body>
+    </html>
