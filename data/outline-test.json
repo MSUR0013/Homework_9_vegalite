@@ -1,0 +1,11 @@
+    {
+    "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
+    "width": "container",
+    "height": 500,
+    "projection": {"type": "conicConformal", "parallels": [-18,-36], "rotate": [132,0,0], "scale": 1000},
+    "mark": {"type":"geoshape","filled": false, "stroke":"#445b71","strokeWidth":0.8},
+    "data": {
+        "url": "data/aus_lga_2024.topojson",
+        "format": {"type":"topojson", "feature":"LGA_2024_AUST_GDA2020"}
+    }
+    }

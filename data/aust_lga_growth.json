@@ -1,0 +1,67 @@
+    {
+    "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
+    "description": "ABS LGA 2024. Population change 2023–24 (%).",
+    "width": "container",
+    "height": 620,
+    "projection": {"type": "conicConformal","parallels": [-18,-36],"rotate": [132,0,0],"scale": 1000},
+    "config": {"view": {"stroke": null}, "background": "#eef3f7"},
+    "datasets": {
+        "lgaTopo": {
+        "url": "data/aus_lga_2024.topojson",
+        "format": { "type": "topojson", "feature": "LGA_2024_AUST_GDA2020" }
+        }
+    },
+    "layer": [
+        {"mark": {"type": "geoshape"}, "data": {"sphere": true}, "encoding": {"color": {"value": "#dfeaf5"}}},
+        {"mark": {"type": "geoshape"}, "data": {"graticule": {"step": [30, 30]}},
+        "encoding": {"stroke": {"value": "#b7c7d9"}, "strokeWidth": {"value": 0.6}}},
+        {
+        "data": {"name": "lgaTopo"},
+        "mark": {"type": "geoshape", "filled": true, "stroke":"#8aa0b6", "strokeWidth": 0.6},
+        "encoding": {"color": {"value": "#eaf2f8"}}
+        },
+        {
+        "data": {"name": "lgaTopo"},
+        "transform": [
+            {
+            "lookup": "properties.LGA_CODE24",
+            "from": {
+                "data": { "url": "data/lga_change_2324.csv" },
+                "key": "LGA_CODE24",
+                "fields": ["LGA_NAME24", "ERP_2023", "ERP_2024"]
+            }
+            },
+            {"calculate": "toNumber(datum.ERP_2023)", "as": "erp23"},
+            {"calculate": "toNumber(datum.ERP_2024)", "as": "erp24"},
+            {
+            "calculate": "isValid(datum.erp23) && datum.erp23 > 0 && isValid(datum.erp24) ? (datum.erp24 - datum.erp23) / datum.erp23 * 100 : null",
+            "as": "change_pct"
+            },
+            {
+            "calculate": "datum.change_pct === null ? 'No data' : (datum.change_pct < 0 ? 'Decline' : (datum.change_pct < 1 ? '0.0 to <1.0' : (datum.change_pct < 2 ? '1.0 to <2.0' : (datum.change_pct < 3 ? '2.0 to <3.0' : '3.0 or more'))))",
+            "as": "band"
+            }
+        ],
+        "mark": {"type": "geoshape"},
+        "encoding": {
+            "color": {
+            "field": "band",
+            "type": "nominal",
+            "scale": {
+                "domain": ["3.0 or more", "2.0 to <3.0", "1.0 to <2.0", "0.0 to <1.0", "Decline", "No data"],
+                "range": ["#b30000", "#d7301f", "#fc8d59", "#fee08b", "#ffffbf", "#e0e0e0"]
+            },
+            "legend": null
+            },
+            "stroke": {"value": "#ffffff"},
+            "strokeWidth": {"value": 0.4},
+            "tooltip": [
+            {"field": "properties.LGA_NAME24", "title": "LGA"},
+            {"field": "erp23", "title": "ERP 2023", "format": ","},
+            {"field": "erp24", "title": "ERP 2024", "format": ","},
+            {"field": "change_pct", "title": "Change (%)", "format": ".2f"}
+            ]
+        }
+        }
+    ]
+    }
